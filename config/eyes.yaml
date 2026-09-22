@@ -1,0 +1,114 @@
+# Animatronic Eyes — runtime configuration
+#
+# Ported from the Arduino build's EyeConfig.h (calibrated December 2024).
+# Mechanism: Simplified 3D Printed Dual Eye Mechanism. Servos: SG90.
+#
+# All positions are raw PCA9685 12-bit ticks at 60 Hz, identical to the values
+# the Arduino passed to pwm.setPWM(channel, 0, ticks). The Bonnet uses the same
+# PCA9685 chip as the Arduino shield, so these transfer unchanged.
+#
+# DO NOT change calibrated values without re-running the calibration procedure.
+# Driving a servo into a mechanical hard stop causes buzzing, heat, and failure.
+
+board:
+  # The Arduino shield had A2 bridged (0x44). The Adafruit Bonnet #3416 ships
+  # with no address jumpers bridged, so it enumerates at 0x40.
+  # Confirm with: i2cdetect -y 1
+  i2c_address: 0x40
+  pwm_frequency_hz: 60
+
+safety:
+  # Hard bounds applied to every channel after per-servo clamping.
+  absolute_min_ticks: 100
+  absolute_max_ticks: 650
+  # Maximum tick change permitted in a single update, per channel.
+  max_delta_per_update: 50
+  # Loop period. 20 ms => 50 Hz.
+  update_interval_ms: 20
+
+# --- Eye gaze axes -----------------------------------------------------------
+# `inverted` handles servos mounted backwards in software; no rewiring needed.
+
+gaze:
+  horizontal:
+    channel: 0
+    min_ticks: 220      # leftmost safe position
+    center_ticks: 345   # looking straight ahead
+    max_ticks: 470      # rightmost safe position
+    inverted: true
+  vertical:
+    channel: 1
+    min_ticks: 260      # downward safe position
+    center_ticks: 342   # looking level
+    max_ticks: 440      # upward safe position
+    inverted: false
+
+# --- Eyelids -----------------------------------------------------------------
+# Each lid calibrated independently; values differ between left and right
+# because of normal servo-to-servo variation.
+
+eyelids:
+  left_upper:
+    channel: 2
+    open_ticks: 300
+    closed_ticks: 410
+    inverted: false
+  left_lower:
+    channel: 3
+    open_ticks: 280
+    closed_ticks: 400
+    inverted: true
+  right_upper:
+    channel: 4
+    open_ticks: 255
+    closed_ticks: 380
+    inverted: true
+  right_lower:
+    channel: 5
+    open_ticks: 280
+    closed_ticks: 395
+    inverted: false
+
+# --- Motion ------------------------------------------------------------------
+# Time constants are frame-rate independent: alpha = 1 - exp(-dt / tau).
+# Derived to match the Arduino's per-iteration smoothing at 50 Hz:
+#   eye    smoothing 8 -> tau = 0.020 / ln(8/7) = 0.150 s
+#   eyelid smoothing 5 -> tau = 0.020 / ln(5/4) = 0.090 s
+
+motion:
+  gaze_tau_s: 0.150
+  eyelid_tau_s: 0.090
+
+# --- Input -------------------------------------------------------------------
+
+nunchuck:
+  i2c_address: 0x52
+  joy_x_min: 26
+  joy_x_max: 226
+  joy_y_min: 26
+  joy_y_max: 226
+  center: 126
+  # Joystick counts around center treated as no input. Raise if the eyes
+  # jitter when the stick is released.
+  deadzone: 10
+
+# --- Behaviors ---------------------------------------------------------------
+
+blink:
+  duration_ms: 150    # natural human blink: 100-150 ms
+
+startup:
+  eyes_closed_hold_ms: 1000
+  eyes_close_duration_ms: 400
+  eyes_open_duration_ms: 800
+  look_around_duration_ms: 2000   # split into four equal L/R/U/D segments
+  return_to_center_ms: 500
+
+idle:
+  timeout_ms: 15000           # inactivity before idle behaviors start
+  blink_interval_min_ms: 2000
+  blink_interval_max_ms: 6000
+  sequence_min_ms: 2000
+  sequence_max_ms: 4000
+  # Fraction of each axis's full range the idle gaze is allowed to wander.
+  movement_range: 0.7

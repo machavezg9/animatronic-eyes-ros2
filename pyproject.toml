@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "animatronic-eyes"
+version = "0.1.0"
+description = "Six-axis animatronic eye control for Raspberry Pi 5 + PCA9685"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "machavezg9", email = "machavezg9@gmail.com" }]
+
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Hardware backend. Not installable on non-Pi dev machines; the mock backend
+# needs none of this.
+hardware = [
+    "adafruit-circuitpython-pca9685>=3.4.16",
+    "adafruit-blinka>=8.44.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[project.scripts]
+animatronic-eyes = "animatronic_eyes.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
