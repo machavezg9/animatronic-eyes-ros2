@@ -9,6 +9,7 @@ values and the whole stack above this point is hardware-independent.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..config.schema import EyesConfig
@@ -159,6 +160,54 @@ class EyeController:
         self._servo_v.snap_to(self._cfg.gaze.vertical.ticks_for(target.y))
         for servo, lid in zip(self._lid_servos, self._cfg.eyelids.all()):
             servo.snap_to(lid.ticks_for(closure))
+
+    def home(
+        self,
+        closure: float = LID_CLOSED,
+        on_channel: Callable[[str, int, int], None] | None = None,
+    ) -> None:
+        """Establish a known physical position, one channel at a time.
+
+        This is the coldest move of a session: the servos have been unpowered,
+        so they are mechanically wherever friction left them, and the first
+        pulse commands an absolute position they will travel to at their own
+        speed. That first move cannot be rate-limited -- with no feedback there
+        is nothing to rate-limit *from* -- so two things are done instead.
+
+        Gaze goes to centre, the point furthest from either mechanical stop, so
+        the one unbounded move travels away from anything it could bind on.
+
+        Channels are driven one at a time, with `on_channel` invoked after each
+        (the caller supplies the delay). If a channel binds, it binds alone and
+        audibly, rather than in a chorus of six.
+
+        `closure` should be the eyelid position the caller intends to start
+        from, so the lids are not commanded somewhere only to reverse out of it
+        on the next frame.
+        """
+        self._target = GazeTarget(0.0, 0.0)
+        self._lid_target = closure
+        self._blinking = False
+        self._gaze_x.snap(0.0)
+        self._gaze_y.snap(0.0)
+        self._lid.snap(closure)
+
+        steps: list[tuple[str, Servo, int]] = [
+            ("horizontal", self._servo_h, self._cfg.gaze.horizontal.ticks_for(0.0)),
+            ("vertical", self._servo_v, self._cfg.gaze.vertical.ticks_for(0.0)),
+        ]
+        for name, servo, lid in zip(
+            ("left_upper", "left_lower", "right_upper", "right_lower"),
+            self._lid_servos,
+            self._cfg.eyelids.all(),
+        ):
+            steps.append((name, servo, lid.ticks_for(closure)))
+
+        for name, servo, ticks in steps:
+            servo.snap_to(ticks)
+            log.info("homed %-12s ch%d -> %d", name, servo.channel, ticks)
+            if on_channel is not None:
+                on_channel(name, servo.channel, ticks)
 
     def rest(self) -> None:
         """Centre the gaze and open the lids. Safe state for shutdown."""

@@ -166,6 +166,7 @@ def validate(cfg: EyesConfig) -> None:
         )
 
     for label, value in (
+        ("home_stagger_ms", cfg.startup.home_stagger_ms),
         ("eyes_closed_hold_ms", cfg.startup.eyes_closed_hold_ms),
         ("eyes_close_duration_ms", cfg.startup.eyes_close_duration_ms),
         ("eyes_open_duration_ms", cfg.startup.eyes_open_duration_ms),

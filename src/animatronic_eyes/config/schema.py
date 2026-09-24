@@ -136,11 +136,16 @@ class BlinkConfig:
 
 @dataclass(frozen=True)
 class StartupConfig:
+    home_stagger_ms: int
     eyes_closed_hold_ms: int
     eyes_close_duration_ms: int
     eyes_open_duration_ms: int
     look_around_duration_ms: int
     return_to_center_ms: int
+
+    @property
+    def home_stagger_s(self) -> float:
+        return self.home_stagger_ms / 1000.0
 
 
 @dataclass(frozen=True)

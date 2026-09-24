@@ -98,6 +98,10 @@ blink:
   duration_ms: 150    # natural human blink: 100-150 ms
 
 startup:
+  # Delay between channels during initial homing. Servos come up one at a
+  # time rather than all six at once, so a mechanical bind is visible and
+  # abortable on a single channel. 0 disables the stagger.
+  home_stagger_ms: 250
   eyes_closed_hold_ms: 1000
   eyes_close_duration_ms: 400
   eyes_open_duration_ms: 800

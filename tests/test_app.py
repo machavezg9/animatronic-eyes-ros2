@@ -145,3 +145,86 @@ def test_stop_ends_the_loop(config, backend):
     ref[0] = app
     app.run(duration=60.0)
     assert source.calls < 20
+
+
+# --- Homing ------------------------------------------------------------------
+
+
+def test_home_drives_every_channel_once(config, eyes, backend):
+    eyes.home()
+    assert sorted(w.channel for w in backend.writes) == [0, 1, 2, 3, 4, 5]
+
+
+def test_home_brings_channels_up_one_at_a_time(config, eyes, backend):
+    """A bind should be attributable to a single channel, not a chorus of six."""
+    order = []
+    eyes.home(on_channel=lambda name, ch, ticks: order.append((ch, len(backend.writes))))
+    # Each callback fires after exactly one more write than the last.
+    assert [n for _, n in order] == [1, 2, 3, 4, 5, 6]
+
+
+def test_home_centers_gaze(config, eyes, backend):
+    """Centre is the point furthest from either mechanical stop."""
+    eyes.home()
+    assert backend.positions[config.gaze.horizontal.channel] == (
+        config.gaze.horizontal.center_ticks
+    )
+    assert backend.positions[config.gaze.vertical.channel] == (
+        config.gaze.vertical.center_ticks
+    )
+
+
+def test_home_defaults_lids_closed(config, eyes, backend):
+    from animatronic_eyes.module.eyes import LID_CLOSED
+
+    eyes.home()
+    for lid in config.eyelids.all():
+        assert backend.positions[lid.channel] == lid.ticks_for(LID_CLOSED)
+
+
+def test_home_respects_requested_closure(config, eyes, backend):
+    from animatronic_eyes.module.eyes import LID_OPEN
+
+    eyes.home(LID_OPEN)
+    for lid in config.eyelids.all():
+        assert backend.positions[lid.channel] == lid.ticks_for(LID_OPEN)
+
+
+def test_home_cancels_any_blink(config, eyes):
+    eyes.blink()
+    eyes.home()
+    assert not eyes.is_blinking
+
+
+def test_app_homes_lids_closed_not_open(config, backend):
+    """The startup sequence begins closed; homing open would reverse instantly."""
+    from animatronic_eyes.module.eyes import LID_CLOSED
+
+    app = Application(config, backend, NullInput())
+    app.run(duration=0.05)
+    lid = config.eyelids.left_upper
+    first = next(w for w in backend.writes if w.channel == lid.channel)
+    assert first.ticks == lid.ticks_for(LID_CLOSED)
+
+
+def test_app_homing_is_staggered(config, backend, monkeypatch):
+    import animatronic_eyes.app as app_module
+
+    slept: list[float] = []
+    monkeypatch.setattr(app_module.time, "sleep", lambda s: slept.append(s))
+    Application(config, backend, NullInput()).run(duration=0.05)
+
+    stagger = config.startup.home_stagger_s
+    assert slept.count(stagger) == 6, "expected one stagger pause per channel"
+
+
+def test_zero_stagger_disables_pauses(config, backend, monkeypatch):
+    from dataclasses import replace
+
+    import animatronic_eyes.app as app_module
+
+    cfg = replace(config, startup=replace(config.startup, home_stagger_ms=0))
+    slept: list[float] = []
+    monkeypatch.setattr(app_module.time, "sleep", lambda s: slept.append(s))
+    Application(cfg, backend, NullInput()).run(duration=0.05)
+    assert 0.0 not in slept
