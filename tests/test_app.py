@@ -228,3 +228,23 @@ def test_zero_stagger_disables_pauses(config, backend, monkeypatch):
     monkeypatch.setattr(app_module.time, "sleep", lambda s: slept.append(s))
     Application(cfg, backend, NullInput()).run(duration=0.05)
     assert 0.0 not in slept
+
+
+def test_cli_lid_waypoints_respect_inversion(config):
+    """selftest/home must label by lid state, not by raw field name.
+
+    On an inverted channel the open_ticks/closed_ticks fields are the servo's
+    travel endpoints with open and closed swapped. Reading them directly makes
+    the tool announce "closed" while driving the lid open -- which matters
+    because the hardware procedure depends on knowing when the lid is closing.
+    """
+    for name in ("left_upper", "left_lower", "right_upper", "right_lower"):
+        lid = getattr(config.eyelids, name)
+        from animatronic_eyes.module.eyes import LID_CLOSED, LID_OPEN
+
+        if lid.inverted:
+            assert lid.ticks_for(LID_OPEN) == lid.closed_ticks, name
+            assert lid.ticks_for(LID_CLOSED) == lid.open_ticks, name
+        else:
+            assert lid.ticks_for(LID_OPEN) == lid.open_ticks, name
+            assert lid.ticks_for(LID_CLOSED) == lid.closed_ticks, name

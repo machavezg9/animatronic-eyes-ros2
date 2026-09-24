@@ -15,7 +15,7 @@ from .hal.backend import PWMBackend
 from .hal.mock import MockBackend
 from .inputs.mock import NullInput
 from .inputs.source import InputSource
-from .module.eyes import LID_OPEN, EyeController
+from .module.eyes import LID_CLOSED, LID_OPEN, EyeController
 from .module.servo import Servo
 
 log = logging.getLogger("animatronic_eyes")
@@ -72,12 +72,16 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
             ("center", cfg.center_ticks),
         ]
     else:
+        # Go through ticks_for() so inversion is applied. The raw open_ticks /
+        # closed_ticks fields are the servo's travel endpoints, not the lid's
+        # open and closed positions -- on an inverted channel they are swapped,
+        # and reading them directly labels the sweep backwards.
         waypoints = [
-            ("open", cfg.open_ticks),
+            ("open", cfg.ticks_for(LID_OPEN)),
             ("half", cfg.half_ticks),
-            ("closed", cfg.closed_ticks),
+            ("closed", cfg.ticks_for(LID_CLOSED)),
             ("half", cfg.half_ticks),
-            ("open", cfg.open_ticks),
+            ("open", cfg.ticks_for(LID_OPEN)),
         ]
 
     backend = _make_backend(args.backend, config)
@@ -155,7 +159,7 @@ def _cmd_home(args: argparse.Namespace) -> int:
                 log.error("No servo named %r or on channel %s", args.servo, args.channel)
                 return 2
             cfg, kind, name = found
-            target = cfg.center_ticks if kind == "gaze" else cfg.open_ticks
+            target = cfg.center_ticks if kind == "gaze" else cfg.ticks_for(LID_OPEN)
             servo = Servo(
                 channel=cfg.channel,
                 min_ticks=target,
