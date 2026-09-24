@@ -15,6 +15,7 @@ from .hal.backend import PWMBackend
 from .hal.mock import MockBackend
 from .inputs.mock import NullInput
 from .inputs.source import InputSource
+from .module.eyes import LID_OPEN, EyeController
 from .module.servo import Servo
 
 log = logging.getLogger("animatronic_eyes")
@@ -57,23 +58,11 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
     """
     config = load(args.config)
 
-    by_name = {
-        "horizontal": (config.gaze.horizontal, "gaze"),
-        "vertical": (config.gaze.vertical, "gaze"),
-        "left_upper": (config.eyelids.left_upper, "lid"),
-        "left_lower": (config.eyelids.left_lower, "lid"),
-        "right_upper": (config.eyelids.right_upper, "lid"),
-        "right_lower": (config.eyelids.right_lower, "lid"),
-    }
-    entry = next(
-        (v for k, v in by_name.items() if k == args.servo or v[0].channel == args.channel),
-        None,
-    )
-    if entry is None:
+    found = _find_servo(config, args.servo, args.channel)
+    if found is None:
         log.error("No servo named %r or on channel %s", args.servo, args.channel)
         return 2
-
-    cfg, kind = entry
+    cfg, kind, _ = found
     if kind == "gaze":
         waypoints = [
             ("center", cfg.center_ticks),
@@ -118,6 +107,74 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         return 1
     finally:
         backend.deinit()
+    return 0
+
+
+def _find_servo(config, name: str | None, channel: int | None):
+    """Resolve a servo by name or channel. Returns (config, kind, name)."""
+    table = {
+        "horizontal": (config.gaze.horizontal, "gaze"),
+        "vertical": (config.gaze.vertical, "gaze"),
+        "left_upper": (config.eyelids.left_upper, "lid"),
+        "left_lower": (config.eyelids.left_lower, "lid"),
+        "right_upper": (config.eyelids.right_upper, "lid"),
+        "right_lower": (config.eyelids.right_lower, "lid"),
+    }
+    for key, (cfg, kind) in table.items():
+        if key == name or cfg.channel == channel:
+            return cfg, kind, key
+    return None
+
+
+def _cmd_home(args: argparse.Namespace) -> int:
+    """Drive servos to a known safe position and exit.
+
+    Gaze goes to centre -- the point furthest from either mechanical stop --
+    and eyelids to open. This is the safest command in the tool: one position
+    per servo, no sweep, no travel toward a limit. Use it as the first move
+    after wiring, and to recover a known state any time the mechanism has been
+    left somewhere uncertain.
+    """
+    config = load(args.config)
+    backend = _make_backend(args.backend, config)
+
+    try:
+        if args.servo is None and args.channel is None:
+            eyes = EyeController(config, backend)
+            print("Homing all six channels (gaze centred, lids open).\n")
+            eyes.home(
+                LID_OPEN,
+                on_channel=lambda name, ch, ticks: (
+                    print(f"  ch{ch}  {name:<12} -> {ticks}"),
+                    time.sleep(config.startup.home_stagger_s),
+                )[0],
+            )
+        else:
+            found = _find_servo(config, args.servo, args.channel)
+            if found is None:
+                log.error("No servo named %r or on channel %s", args.servo, args.channel)
+                return 2
+            cfg, kind, name = found
+            target = cfg.center_ticks if kind == "gaze" else cfg.open_ticks
+            servo = Servo(
+                channel=cfg.channel,
+                min_ticks=target,
+                max_ticks=target,
+                safety=config.safety,
+                backend=backend,
+            )
+            print(f"Homing ch{cfg.channel} ({name}) -> {target} ticks")
+            servo.snap_to(target)
+
+        if args.hold > 0:
+            print(f"\nHolding {args.hold:.0f}s. Watch for buzzing or strain. Ctrl-C aborts.")
+            time.sleep(args.hold)
+    except KeyboardInterrupt:
+        print("\nAborted.")
+        return 1
+    finally:
+        backend.deinit()
+        print("Output released.")
     return 0
 
 
@@ -169,6 +226,17 @@ def build_parser() -> argparse.ArgumentParser:
     selftest.add_argument("--dwell", type=float, default=1.0,
                           help="Seconds to hold at each waypoint (default: 1.0)")
     selftest.set_defaults(func=_cmd_selftest, channel=None, servo=None)
+
+    home = sub.add_parser(
+        "home", help="Drive servo(s) to a safe known position and stop (no sweep)"
+    )
+    home_target = home.add_mutually_exclusive_group()
+    home_target.add_argument("--channel", type=int, help="PCA9685 channel number")
+    home_target.add_argument("--servo", help="Servo name, e.g. horizontal")
+    home.add_argument("--backend", choices=("mock", "pca9685"), default="pca9685")
+    home.add_argument("--hold", type=float, default=3.0,
+                      help="Seconds to hold position before releasing (default: 3)")
+    home.set_defaults(func=_cmd_home, channel=None, servo=None)
 
     validate = sub.add_parser("validate", help="Check the configuration and print it")
     validate.set_defaults(func=_cmd_validate)
