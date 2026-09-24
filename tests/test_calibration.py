@@ -1,8 +1,12 @@
 """The calibration values must survive the port unchanged.
 
-These assert the exact numbers from the Arduino build's EyeConfig.h. If one of
-these fails after a config edit, the mechanism's safe travel has changed and the
-servos need recalibrating -- not the test updating.
+These assert the numbers the mechanism is actually calibrated to. They come from
+the Arduino build's EyeConfig.h except where hardware measurement has since
+corrected it -- each deviation is commented with what was measured and when.
+
+If one fails after a config edit, the mechanism's safe travel has changed and the
+servos need recalibrating. Update these only alongside a measurement on hardware,
+never to make a failing test pass.
 """
 
 from __future__ import annotations
@@ -11,7 +15,10 @@ import pytest
 
 ARDUINO_GAZE = {
     "horizontal": dict(channel=0, min_ticks=220, center_ticks=345, max_ticks=470, inverted=True),
-    "vertical": dict(channel=1, min_ticks=260, center_ticks=342, max_ticks=440, inverted=False),
+    # max_ticks is 430, not the 440 EyeConfig.h compiled: 440 buzzes against a
+    # mechanical stop. Measured on hardware Sept 2026. See the note in
+    # config/eyes.yaml -- EyeConfig.h's own docstring warned about this.
+    "vertical": dict(channel=1, min_ticks=260, center_ticks=342, max_ticks=430, inverted=False),
 }
 
 ARDUINO_LIDS = {

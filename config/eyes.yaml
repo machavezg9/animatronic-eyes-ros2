@@ -40,7 +40,13 @@ gaze:
     channel: 1
     min_ticks: 260      # downward safe position
     center_ticks: 342   # looking level
-    max_ticks: 440      # upward safe position
+    # Re-verified on hardware Sept 2026. EyeConfig.h carried 440 as the
+    # compiled value while its own docstring warned "DO NOT increase MAX
+    # above 400". 440 buzzes against a mechanical stop; 430 holds silently.
+    # The Arduino never drove this axis above ~433 anyway -- its integer
+    # smoothing stalled ~7 ticks short of any target -- so 440 was only ever
+    # reached by the calibrator, not in normal operation.
+    max_ticks: 430      # upward safe position, measured
     inverted: false
 
 # --- Eyelids -----------------------------------------------------------------
