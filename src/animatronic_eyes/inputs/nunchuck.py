@@ -73,11 +73,7 @@ class NunchuckInput(InputSource):
             return NEUTRAL
 
         try:
-            self._bus.write_byte(self._cfg.i2c_address, 0x00)
-            time.sleep(0.0001)
-            data = self._bus.read_i2c_block_data(
-                self._cfg.i2c_address, 0x00, _REPORT_LENGTH
-            )
+            data = self._read_report()
         except OSError:
             log.warning("Nunchuck read failed; treating this frame as neutral")
             return NEUTRAL
@@ -107,6 +103,26 @@ class NunchuckInput(InputSource):
             center=c_pressed,
             active=x != 0.0 or y != 0.0 or z_down or c_down,
         )
+
+    def _read_report(self) -> list[int]:
+        """Fetch one 6-byte report.
+
+        This must be a plain write of the pointer byte, a STOP, a short settle,
+        then a separate raw read. `read_i2c_block_data` looks like the obvious
+        call but issues a *combined* transaction -- pointer write, repeated
+        START, read -- and the nunchuck answers that with six 0xFF bytes. Those
+        normalize to a joystick pinned hard into both extremes rather than an
+        obvious failure, so the driver reads full deflection while the stick is
+        sitting at rest.
+        """
+        from smbus2 import i2c_msg  # type: ignore[import-not-found]
+
+        assert self._bus is not None
+        self._bus.i2c_rdwr(i2c_msg.write(self._cfg.i2c_address, [0x00]))
+        time.sleep(0.0003)
+        report = i2c_msg.read(self._cfg.i2c_address, _REPORT_LENGTH)
+        self._bus.i2c_rdwr(report)
+        return list(report)
 
     def stop(self) -> None:
         if self._bus is not None:
